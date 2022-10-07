@@ -1,0 +1,76 @@
+version: '2.4'
+
+services:
+  artifactory:
+    image: docker.bintray.io/jfrog/artifactory-jcr:7.39.4
+    container_name: artifactory
+    ports:
+      - "8081:8081"
+      - "8082:8082"
+    volumes:
+      - ./artifactory/:/artifactory_extra_conf/
+    restart: always
+    healthcheck:
+        test: ["CMD", "curl", "-f", "http://localhost:8082/artifactory/api/system/ping"]
+        start_period: 30s
+        interval: 5s
+        timeout: 10s
+        retries: 30
+
+  jenkins:
+    depends_on:
+      artifactory:
+        condition: service_healthy
+    build: jenkins_controller
+    container_name: jenkins
+    ports:
+      - "50000:50000"
+      - "8880:8080"
+    volumes:
+      - ./jenkins_controller/casc.yml:/usr/share/jenkins/ref/casc.yml
+      - ./jenkins_controller/jobs:/usr/share/jenkins/ref/jobs
+    restart: always
+
+  jenkins_agent:
+    depends_on:
+      - jenkins
+    container_name: jenkins_agent
+    build: jenkins_agent
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+    expose:
+      - 22
+    environment:
+      - JENKINS_AGENT_SSH_PUBKEY=ssh-rsa AAAAB3NzaC1yc2EAAAADAQABAAABAQComWs8/4V1Bd04EQ9IKbOiaC7ub6BPVz7FtDBy0tbHPgHg7XtRjewcAfOjV3UrqQSuw0HfF996JIQOB5NrUxAFsFOn2QsCc06vVya5ehe+kj39hq3DQ5tH/ZnUBE8V5E8iSV//X411Gxmlk1pgbEM4/9+KydWlQH7l9qlhVbZQARbNQ1D/6eQ7/FVrliOZvXtkw9SI36ym0+qKGB/gVju0R7qPheCCX0sQ807ZS0EZPQCgPhGrR6UIWfZFOQn1kKqks/C4wU0oG2OCjQkPwuraNxz+kVwDBS1UKXLGGgX1YM4i3y3TLXoIVW1PGmgazNjnQjEvMV9EMo8BhpQKJj0j
+    restart: always
+
+  sonarqube:
+    depends_on:
+      - jenkins
+    image: sonarqube:9.2.4-community
+    container_name: sonarqube
+    ports:
+      - "9000:9000"
+    restart: always
+
+  selenium_hub:
+    depends_on:
+      - jenkins
+    image: selenium/hub
+    container_name: selenium_hub
+    ports:
+    - "4442:4442"
+    - "4443:4443"
+    - "4444:4444"
+    restart: always
+
+  firefox:
+    image: selenium/node-firefox
+    container_name: firefox
+    depends_on:
+      - selenium_hub
+    environment:
+    - SE_EVENT_BUS_HOST=selenium_hub
+    - SE_EVENT_BUS_PUBLISH_PORT=4442
+    - SE_EVENT_BUS_SUBSCRIBE_PORT=4443
+    restart: always
